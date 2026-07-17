@@ -8,6 +8,7 @@ const LANES = [
 const DEFAULT_BINDINGS = { lanes: ['KeyA', 'KeyS', 'KeyJ', 'KeyK', 'KeyL'], strum: 'Enter', special: 'Space' };
 const DIFFICULTIES = { a: 'Easy', b: 'Medium', c: 'Hard', d: 'Expert' };
 const NOTE_WINDOW = 1.7;
+const SONG_LEAD_IN = 3;
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -38,7 +39,7 @@ const state = {
   running: false, paused: false, notes: [], score: 0, combo: 0, maxCombo: 0,
   hits: 0, misses: 0, health: 85, hitEffects: [], special: 0, specialActive: false, specialPhrases: new Map(), shakeUntil: 0,
   held: new Set(), animation: 0, lastTime: 0, room: null, roomPoll: null,
-  roomStartAt: null,
+  roomStartAt: null, videoStarted: false, leadInUntil: 0, leadInRemaining: 0,
   bindings: loadBindings(), bindingCapture: null, volume: loadVolume(), nickname: localStorage.gfNick || 'Player',
 };
 
@@ -202,7 +203,7 @@ function renderGame() {
 }
 
 async function scheduleRoomStart() {
-  while (state.route === 'game' && (!state.playerReady || Date.now() < state.roomStartAt - 2100)) await sleep(100);
+  while (state.route === 'game' && (!state.playerReady || Date.now() < state.roomStartAt - SONG_LEAD_IN * 1000 - 2100)) await sleep(100);
   if (state.route === 'game' && !state.running && $('[data-begin]')) beginPlayback();
   state.roomStartAt = null;
 }
@@ -220,18 +221,21 @@ async function beginPlayback() {
   if (!state.playerReady) { toast('The video is still loading.'); return; }
   $('[data-game-overlay]').innerHTML = '<div class="countdown">3</div>';
   for (const number of [3, 2, 1]) { $('.countdown').textContent = number; await sleep(650); }
-  $('[data-game-overlay]').remove(); state.player.seekTo(0, true); state.player.playVideo();
-  state.running = true; state.paused = false; state.lastTime = performance.now(); state.animation = requestAnimationFrame(gameLoop);
+  $('[data-game-overlay]').remove(); state.player.seekTo(0, true); state.player.pauseVideo();
+  state.running = true; state.paused = false; state.videoStarted = false; state.leadInRemaining = SONG_LEAD_IN;
+  state.lastTime = performance.now(); state.leadInUntil = state.lastTime + SONG_LEAD_IN * 1000; state.animation = requestAnimationFrame(gameLoop);
 }
 
 function songTime() {
   if (!state.player?.getCurrentTime) return 0;
+  if (!state.videoStarted) return Number(state.selected.sync || 0) - Math.max(0, (state.leadInUntil - performance.now()) / 1000);
   return state.player.getCurrentTime() + Number(state.selected.sync || 0);
 }
 
 function gameLoop() {
   if (!state.running || state.paused) return;
   const now = performance.now(); const delta = Math.min(.05, Math.max(0, (now - state.lastTime) / 1000)); state.lastTime = now;
+  if (!state.videoStarted && now >= state.leadInUntil) { state.videoStarted = true; state.leadInRemaining = 0; state.player.playVideo(); }
   updateSpecial(delta); const time = songTime();
   markMisses(time); scoreSustains(time); drawFrame(time); updateHud(); broadcastScore(time);
   if (time > state.chart.length + 1 || state.health <= 0) return finishGame();
@@ -388,7 +392,14 @@ function drawFrame(time) {
 function togglePause() {
   if (!state.running) return;
   state.paused = !state.paused; $('[data-pause]').textContent = state.paused ? '▶' : 'Ⅱ';
-  if (state.paused) { state.player.pauseVideo(); cancelAnimationFrame(state.animation); } else { state.lastTime = performance.now(); state.player.playVideo(); state.animation = requestAnimationFrame(gameLoop); }
+  if (state.paused) {
+    if (!state.videoStarted) state.leadInRemaining = Math.max(0, (state.leadInUntil - performance.now()) / 1000);
+    state.player.pauseVideo(); cancelAnimationFrame(state.animation);
+  } else {
+    state.lastTime = performance.now();
+    if (state.videoStarted) state.player.playVideo(); else state.leadInUntil = state.lastTime + state.leadInRemaining * 1000;
+    state.animation = requestAnimationFrame(gameLoop);
+  }
 }
 
 function finishGame() {
@@ -399,7 +410,7 @@ function finishGame() {
   $('[data-retry-song]').onclick = loadGame; $('[data-results-exit]').onclick = renderSongSetup;
 }
 
-function resetScore() { Object.assign(state, { running: false, paused: false, score: 0, combo: 0, maxCombo: 0, hits: 0, misses: 0, health: 85, hitEffects: [], special: 0, specialActive: false, shakeUntil: 0 }); state.held.clear(); }
+function resetScore() { Object.assign(state, { running: false, paused: false, videoStarted: false, leadInUntil: 0, leadInRemaining: 0, score: 0, combo: 0, maxCombo: 0, hits: 0, misses: 0, health: 85, hitEffects: [], special: 0, specialActive: false, shakeUntil: 0 }); state.held.clear(); }
 function stopGame() { state.running = false; cancelAnimationFrame(state.animation); try { state.player?.stopVideo?.(); state.player?.destroy?.(); } catch {} state.player = null; }
 function updateHud() { $('[data-score]') && ($('[data-score]').textContent = Math.round(state.score).toLocaleString()); $('[data-combo]') && ($('[data-combo]').textContent = `${state.combo}×`); $('[data-health]') && ($('[data-health]').style.width = `${state.health}%`); if ($('[data-special-fill]')) { $('[data-special-fill]').style.width = `${state.special}%`; $('[data-special-value]').textContent = `${Math.round(state.special)}%`; $('[data-special-hud]').classList.toggle('ready', state.special >= 50 && !state.specialActive); $('[data-special-hud]').classList.toggle('active', state.specialActive); } }
 function showJudge(text, color) { const node = $('[data-judgement]'); if (!node) return; node.getAnimations().forEach(animation => animation.cancel()); node.textContent = text; node.style.color = color; node.animate([{ opacity: 0, transform: 'translate(-50%,20px) scale(.65)' }, { opacity: 1, offset: .18, transform: 'translate(-50%,-4px) scale(1.14)' }, { opacity: 1, offset: .58, transform: 'translate(-50%,-12px) scale(1)' }, { opacity: 0, transform: 'translate(-50%,-58px) scale(.9)' }], { duration: 620, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }); }
