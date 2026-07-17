@@ -31,7 +31,7 @@ No storage configuration is required. If persistent global rooms and scores are 
 - Live Guitar Flash catalog, song metadata, and original Easy–Expert charts
 - Server-side AES chart decoding in local and Vercel runtimes
 - YouTube IFrame clock with original Guitar Flash per-song timing and 82 ms player adjustment
-- Vertical five-lane canvas player, chords, sustains, and remappable controls
+- Vertical five-lane canvas player, chords, sustains, remappable controls, and persistent volume control
 - Special phrases, meter accumulation, configurable activation, timed drain, and 2× scoring
 - Scoring, combo, crowd meter, pause, results, hit animations, and local rankings
 - Multiplayer rooms with synchronized starts and serverless-safe polling

@@ -20,6 +20,8 @@ function loadBindings() {
   return { lanes: [...DEFAULT_BINDINGS.lanes], strum: DEFAULT_BINDINGS.strum, special: DEFAULT_BINDINGS.special };
 }
 
+function loadVolume() { const value = Number(localStorage.gfVolume ?? 1); return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 1; }
+
 function bindingLabel(code) {
   if (code === 'Space') return 'SPACE';
   if (code.startsWith('Key')) return code.slice(3);
@@ -34,7 +36,7 @@ const state = {
   hits: 0, misses: 0, health: 85, hitEffects: [], special: 0, specialActive: false, specialPhrases: new Map(), shakeUntil: 0,
   held: new Set(), animation: 0, lastTime: 0, room: null, roomPoll: null,
   roomStartAt: null,
-  bindings: loadBindings(), bindingCapture: null, nickname: localStorage.gfNick || 'Player',
+  bindings: loadBindings(), bindingCapture: null, volume: loadVolume(), nickname: localStorage.gfNick || 'Player',
 };
 
 window.onYouTubeIframeAPIReady = () => { state.playerReady = true; };
@@ -196,7 +198,7 @@ function setupYouTube() {
   state.playerReady = false;
   const create = () => {
     state.player?.destroy?.();
-    state.player = new YT.Player('youtube-player', { videoId: state.selected.video, width: '100%', height: '100%', playerVars: { controls: 0, disablekb: 1, fs: 0, modestbranding: 1, rel: 0, playsinline: 1 }, events: { onReady: () => state.playerReady = true, onError: () => toast('YouTube could not play this video.') } });
+    state.player = new YT.Player('youtube-player', { videoId: state.selected.video, width: '100%', height: '100%', playerVars: { controls: 0, disablekb: 1, fs: 0, modestbranding: 1, rel: 0, playsinline: 1 }, events: { onReady: event => { event.target.setVolume(Math.round(state.volume * 100)); state.playerReady = true; }, onError: () => toast('YouTube could not play this video.') } });
   };
   if (window.YT?.Player) create(); else { const wait = setInterval(() => { if (window.YT?.Player) { clearInterval(wait); create(); } }, 100); }
 }
@@ -413,6 +415,7 @@ function renderSettings() {
   state.route = 'settings'; state.bindingCapture = null; stopGame();
   $('#app').innerHTML = shell(`<section class="content-page settings"><span class="eyebrow">PLAYER SETTINGS</span><h1>Make it yours</h1>
     <label>Nickname<input data-nickname maxlength="18" value="${escapeHtml(state.nickname)}" /></label>
+    <label>Volume multiplier<input data-volume type="range" min="0" max="1" step="0.05" value="${state.volume}" /><output data-volume-output>${state.volume.toFixed(2)}×</output></label>
     <section class="binding-settings"><div><h2>Game controls</h2><p>Select a control, then press the key you want to use.</p></div>
       ${LANES.map((lane, index) => `<div class="binding-row"><span><i style="background:${lane.color}"></i>Lane ${index + 1}</span><button class="binding-key" data-binding-lane="${index}">${escapeHtml(bindingLabel(state.bindings.lanes[index]))}</button></div>`).join('')}
       <div class="binding-row"><span>Strum</span><button class="binding-key" data-binding-strum>${escapeHtml(bindingLabel(state.bindings.strum))}</button></div>
@@ -421,13 +424,14 @@ function renderSettings() {
     </section>
     <button class="primary" data-save-settings>Save settings</button></section>`, '');
   bindNavigation();
+  $('[data-volume]').oninput = event => { $('[data-volume-output]').textContent = `${Number(event.target.value).toFixed(2)}×`; };
   $$('[data-binding-lane]').forEach(button => button.onclick = () => beginBindingCapture(button, { type: 'lane', index: Number(button.dataset.bindingLane) }));
   $('[data-binding-strum]').onclick = event => beginBindingCapture(event.currentTarget, { type: 'strum' });
   $('[data-binding-special]').onclick = event => beginBindingCapture(event.currentTarget, { type: 'special' });
   $('[data-reset-bindings]').onclick = () => { state.bindings = { lanes: [...DEFAULT_BINDINGS.lanes], strum: DEFAULT_BINDINGS.strum, special: DEFAULT_BINDINGS.special }; renderSettings(); };
   $('[data-save-settings]').onclick = () => {
-    state.nickname = $('[data-nickname]').value.trim() || 'Player';
-    localStorage.gfNick = state.nickname; localStorage.gfBindings = JSON.stringify(state.bindings);
+    state.nickname = $('[data-nickname]').value.trim() || 'Player'; state.volume = Number($('[data-volume]').value);
+    localStorage.gfNick = state.nickname; localStorage.gfVolume = state.volume; localStorage.gfBindings = JSON.stringify(state.bindings);
     toast('Settings saved.'); renderLibrary();
   };
 }
