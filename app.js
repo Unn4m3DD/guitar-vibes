@@ -354,7 +354,7 @@ function drawFrame(time) {
     }
     if (note.state === 'miss') return;
     const head = project(note.time, note.lane);
-    if (head.rawDepth < -.04 || head.rawDepth > 1.18) return;
+    if (head.rawDepth < -.04 || (head.rawDepth > 1.18 && note.state !== 'holding')) return;
     const visibleHead = head.rawDepth > 1 && note.state === 'holding' ? project(time, note.lane) : head;
     const noteWidth = 32 + 12 * Math.sqrt(visibleHead.depth); const noteHeight = 13 + 6 * Math.sqrt(visibleHead.depth); const color = LANES[note.lane].color;
     if (note.duration > .08) {
