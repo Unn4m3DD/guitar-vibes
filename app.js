@@ -161,12 +161,22 @@ function prepareNotes(chartNotes) {
     if (note.special) lastSpecialTime = note.time;
     return { ...note, index, state: 'pending', specialPhrase: note.special ? phraseId : null };
   });
-  for (let lane = 0; lane < 5; lane++) {
-    const laneNotes = notes.filter(note => note.lane === lane); let cluster = [];
-    const finishCluster = () => { if (cluster.length > 1) cluster.at(-1).repeatCount = cluster.length; cluster = []; };
-    laneNotes.forEach(note => { const previous = cluster.at(-1); if (!previous || (note.duration <= .08 && previous.duration <= .08 && note.time - previous.time <= .3)) cluster.push(note); else { finishCluster(); cluster.push(note); } });
-    finishCluster();
-  }
+  let cluster = [];
+  const finishCluster = () => {
+    if (cluster.length > 1) cluster.at(-1).repeatCount = cluster.length;
+    cluster = [];
+  };
+  notes.forEach(note => {
+    const previous = cluster.at(-1);
+    const continuesRepeat = previous
+      && note.lane === previous.lane
+      && note.duration <= .08
+      && previous.duration <= .08
+      && note.time - previous.time <= .3;
+    if (!previous || continuesRepeat) cluster.push(note);
+    else { finishCluster(); cluster.push(note); }
+  });
+  finishCluster();
   return notes;
 }
 
