@@ -7,7 +7,7 @@ const LANES = [
 ];
 const DEFAULT_BINDINGS = { lanes: ['KeyA', 'KeyS', 'KeyJ', 'KeyK', 'KeyL'], strum: 'Enter', special: 'Space' };
 const DIFFICULTIES = { a: 'Easy', b: 'Medium', c: 'Hard', d: 'Expert' };
-const NOTE_WINDOW = 1.7;
+const NOTE_WINDOW = 1.35;
 const SONG_LEAD_IN = 3;
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
