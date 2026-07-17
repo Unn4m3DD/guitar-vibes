@@ -261,56 +261,57 @@ function multiplier() { return Math.min(4, 1 + Math.floor(state.combo / 10)) * (
 function drawFrame(time) {
   const canvas = $('#highway'); if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  const w = canvas.width; const h = canvas.height; const center = w / 2;
-  const topY = 54; const hitY = h - 105; const bottomY = h + 28;
-  const topWidth = 720; const bottomWidth = 720;
+  const w = canvas.width; const h = canvas.height; const center = w / 2; const now = performance.now();
+  const topY = 28; const hitY = h - 108; const bottomY = h + 24; const trackWidth = 760;
+  const left = center - trackWidth / 2; const laneWidth = trackWidth / 5;
   const approach = NOTE_WINDOWS[state.noteSpeed] || NOTE_WINDOWS.standard;
-  const depthCurve = depth => Math.pow(Math.max(0, Math.min(1, depth)), 1.06);
-  const roadWidthAt = () => topWidth;
   const project = (eventTime, lane = 2) => {
     const rawDepth = 1 - (eventTime - time) / approach;
     const depth = Math.max(0, Math.min(1, rawDepth));
-    const perspective = depthCurve(depth); const roadWidth = roadWidthAt(depth);
-    return { rawDepth, depth, perspective, roadWidth, laneWidth: roadWidth / 5,
-      x: center - roadWidth / 2 + roadWidth / 5 * (lane + .5),
-      y: topY + (hitY - topY) * perspective };
+    return { rawDepth, depth, x: left + laneWidth * (lane + .5), y: topY + (hitY - topY) * Math.pow(depth, 1.02) };
   };
 
   ctx.clearRect(0, 0, w, h);
-  const bg = ctx.createRadialGradient(center, hitY, 10, center, h * .48, h);
-  bg.addColorStop(0, state.specialActive ? '#11667a' : '#172840'); bg.addColorStop(.55, state.specialActive ? '#092b39' : '#0b111c'); bg.addColorStop(1, '#040509');
-  ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
-
-  ctx.beginPath(); ctx.moveTo(center - topWidth / 2, topY); ctx.lineTo(center + topWidth / 2, topY);
-  ctx.lineTo(center + bottomWidth / 2, bottomY); ctx.lineTo(center - bottomWidth / 2, bottomY); ctx.closePath();
-  ctx.fillStyle = state.specialActive ? 'rgba(3,20,28,.9)' : 'rgba(3,7,13,.94)'; ctx.fill(); ctx.strokeStyle = state.specialActive ? '#83f7ff' : 'rgba(235,242,255,.72)'; ctx.lineWidth = 4; ctx.stroke();
-
-  for (let laneEdge = 1; laneEdge < 5; laneEdge++) {
-    const topX = center - topWidth / 2 + topWidth * laneEdge / 5;
-    const bottomX = center - bottomWidth / 2 + bottomWidth * laneEdge / 5;
-    ctx.beginPath(); ctx.moveTo(topX, topY); ctx.lineTo(bottomX, bottomY);
-    ctx.strokeStyle = 'rgba(210,225,250,.13)'; ctx.lineWidth = 2; ctx.stroke();
+  const stage = ctx.createRadialGradient(center, hitY, 20, center, h * .48, h * .9);
+  stage.addColorStop(0, state.specialActive ? '#0b7188' : '#192a45'); stage.addColorStop(.45, state.specialActive ? '#092b38' : '#0a1220'); stage.addColorStop(1, '#020307');
+  ctx.fillStyle = stage; ctx.fillRect(0, 0, w, h);
+  LANES.forEach((lane, index) => {
+    const glowX = left + laneWidth * (index + .5); const glow = ctx.createRadialGradient(glowX, hitY, 0, glowX, hitY, 230);
+    glow.addColorStop(0, `${lane.color}22`); glow.addColorStop(1, `${lane.color}00`); ctx.fillStyle = glow; ctx.fillRect(glowX - 240, hitY - 240, 480, 480);
+  });
+  for (let streak = 0; streak < 14; streak++) {
+    const y = ((streak * 91 + time * 145) % (h + 120)) - 60; const x = (streak * 173) % w;
+    ctx.fillStyle = `rgba(130,170,230,${.025 + (streak % 3) * .012})`; ctx.fillRect(x, y, 2, 42);
   }
+
+  ctx.save(); ctx.shadowBlur = state.specialActive ? 42 : 28; ctx.shadowColor = state.specialActive ? '#56efff' : '#000';
+  ctx.fillStyle = state.specialActive ? 'rgba(2,22,29,.96)' : 'rgba(3,6,12,.97)'; ctx.beginPath(); ctx.roundRect(left, topY, trackWidth, bottomY - topY, 18); ctx.fill(); ctx.restore();
+  LANES.forEach((lane, index) => {
+    const x = left + laneWidth * index; const bed = ctx.createLinearGradient(0, topY, 0, bottomY);
+    bed.addColorStop(0, '#050811'); bed.addColorStop(.55, `${lane.color}0c`); bed.addColorStop(1, `${lane.color}22`);
+    ctx.fillStyle = bed; ctx.fillRect(x + 2, topY + 2, laneWidth - 4, bottomY - topY - 2);
+    const railX = x + laneWidth / 2; ctx.strokeStyle = `${lane.color}18`; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(railX, topY); ctx.lineTo(railX, hitY); ctx.stroke();
+  });
+  for (let edge = 0; edge <= 5; edge++) { const x = left + laneWidth * edge; ctx.save(); ctx.shadowBlur = edge === 0 || edge === 5 ? 16 : 5; ctx.shadowColor = state.specialActive ? '#83f7ff' : '#64748b'; ctx.strokeStyle = edge === 0 || edge === 5 ? (state.specialActive ? '#83f7ff' : '#728099') : 'rgba(150,170,205,.18)'; ctx.lineWidth = edge === 0 || edge === 5 ? 4 : 2; ctx.beginPath(); ctx.moveTo(x, topY); ctx.lineTo(x, bottomY); ctx.stroke(); ctx.restore(); }
 
   const firstGrid = Math.ceil(time * 2) / 2;
   for (let gridTime = firstGrid; gridTime <= time + approach; gridTime += .5) {
-    const point = project(gridTime); const half = point.roadWidth / 2;
-    ctx.beginPath(); ctx.moveTo(center - half, point.y); ctx.lineTo(center + half, point.y);
+    const point = project(gridTime);
     const wholeSecond = Math.abs(gridTime - Math.round(gridTime)) < .01;
-    ctx.strokeStyle = wholeSecond ? 'rgba(205,220,245,.18)' : 'rgba(205,220,245,.08)';
-    ctx.lineWidth = wholeSecond ? 2 : 1; ctx.stroke();
+    ctx.save(); ctx.shadowBlur = wholeSecond ? 9 : 0; ctx.shadowColor = state.specialActive ? '#83f7ff' : '#8ea4c8';
+    ctx.strokeStyle = wholeSecond ? (state.specialActive ? 'rgba(131,247,255,.34)' : 'rgba(180,205,245,.22)') : 'rgba(180,205,245,.075)'; ctx.lineWidth = wholeSecond ? 2 : 1;
+    ctx.beginPath(); ctx.moveTo(left + 4, point.y); ctx.lineTo(left + trackWidth - 4, point.y); ctx.stroke(); ctx.restore();
+    if (wholeSecond) { ctx.fillStyle = state.specialActive ? '#83f7ff' : '#8494ae'; ctx.fillRect(left - 8, point.y - 2, 12, 4); ctx.fillRect(left + trackWidth - 4, point.y - 2, 12, 4); }
   }
 
   state.notes.forEach(note => {
     if (note.state === 'hit') {
       const progress = Math.min(1, (performance.now() - (note.hitAt || 0)) / 230);
       if (progress < 1) {
-        const impact = project(time, note.lane); const radius = 37 * (1 - progress * .7);
+        const impact = project(time, note.lane); const radius = 42 * (1 - progress * .7);
         const hitColor = note.special ? '#83f7ff' : LANES[note.lane].color;
-        ctx.save(); ctx.globalAlpha = 1 - progress; ctx.fillStyle = hitColor;
-        ctx.shadowBlur = 28 * (1 - progress); ctx.shadowColor = hitColor;
-        ctx.beginPath(); ctx.ellipse(impact.x, impact.y, radius * 1.25, Math.max(2, radius * .46), 0, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke(); ctx.restore();
+        ctx.save(); ctx.globalAlpha = 1 - progress; ctx.shadowBlur = 32; ctx.shadowColor = hitColor; ctx.strokeStyle = '#fff'; ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.ellipse(impact.x, impact.y, radius * 1.2, Math.max(2, radius * .42), 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
       }
       return;
     }
@@ -318,43 +319,44 @@ function drawFrame(time) {
     const head = project(note.time, note.lane);
     if (head.rawDepth < -.04 || head.rawDepth > 1.18) return;
     const visibleHead = head.rawDepth > 1 ? project(time, note.lane) : head;
-    const radius = 10 + 27 * Math.sqrt(visibleHead.depth);
+    const noteWidth = 32 + 12 * Math.sqrt(visibleHead.depth); const noteHeight = 13 + 6 * Math.sqrt(visibleHead.depth); const color = LANES[note.lane].color;
     if (note.duration > .08) {
       const tail = project(note.time + note.duration, note.lane);
-      const headHalf = Math.max(5, radius * .36); const tailHalf = Math.max(3, (8 + 20 * Math.sqrt(tail.depth)) * .36);
-      ctx.fillStyle = note.special ? '#83f7ff' : LANES[note.lane].color; ctx.globalAlpha = note.special ? .65 : .48;
-      ctx.beginPath(); ctx.moveTo(visibleHead.x - headHalf, visibleHead.y); ctx.lineTo(tail.x - tailHalf, tail.y);
-      ctx.lineTo(tail.x + tailHalf, tail.y); ctx.lineTo(visibleHead.x + headHalf, visibleHead.y); ctx.closePath(); ctx.fill();
-      ctx.globalAlpha = 1;
+      ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = '#020409'; ctx.lineWidth = 22; ctx.beginPath(); ctx.moveTo(visibleHead.x, visibleHead.y); ctx.lineTo(tail.x, tail.y); ctx.stroke();
+      ctx.shadowBlur = 18; ctx.shadowColor = note.special ? '#83f7ff' : color; ctx.strokeStyle = note.special ? '#83f7ff' : color; ctx.globalAlpha = note.special ? .82 : .58; ctx.lineWidth = 12; ctx.stroke();
+      ctx.strokeStyle = '#fff'; ctx.globalAlpha = .22; ctx.lineWidth = 3; ctx.stroke(); ctx.restore();
     }
-    ctx.shadowBlur = note.special ? 30 : 12 + 14 * visibleHead.depth; ctx.shadowColor = note.special ? '#83f7ff' : LANES[note.lane].color;
-    ctx.fillStyle = LANES[note.lane].color; ctx.beginPath();
-    ctx.ellipse(visibleHead.x, visibleHead.y, radius * 1.28, radius * .48, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.shadowBlur = 0; ctx.strokeStyle = note.special ? '#83f7ff' : '#fff'; ctx.lineWidth = note.special ? 5 : 1.5 + visibleHead.depth * 2.5; ctx.stroke();
-    if (note.special) { ctx.fillStyle = '#fff'; ctx.font = `900 ${Math.max(10, radius * .62)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✦', visibleHead.x, visibleHead.y + 1); }
+    ctx.save(); ctx.shadowBlur = note.special ? 34 : 24; ctx.shadowColor = note.special ? '#83f7ff' : color;
+    ctx.fillStyle = '#020308'; ctx.beginPath(); ctx.ellipse(visibleHead.x, visibleHead.y + 5, noteWidth + 7, noteHeight + 5, 0, 0, Math.PI * 2); ctx.fill();
+    const gem = ctx.createLinearGradient(0, visibleHead.y - noteHeight, 0, visibleHead.y + noteHeight); gem.addColorStop(0, '#fff'); gem.addColorStop(.18, note.special ? '#d8fdff' : color); gem.addColorStop(.62, color); gem.addColorStop(1, '#141722');
+    ctx.fillStyle = gem; ctx.beginPath(); ctx.ellipse(visibleHead.x, visibleHead.y, noteWidth, noteHeight, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0; ctx.strokeStyle = note.special ? '#83f7ff' : color; ctx.lineWidth = note.special ? 6 : 4; ctx.stroke();
+    ctx.globalAlpha = .7; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(visibleHead.x - noteWidth * .22, visibleHead.y - noteHeight * .38, noteWidth * .32, Math.max(2, noteHeight * .16), -.08, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+    if (note.special) { ctx.fillStyle = '#071218'; ctx.font = `900 ${Math.max(12, noteHeight)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✦', visibleHead.x, visibleHead.y + 1); }
+    ctx.restore();
   });
 
-  const targetWidth = roadWidthAt(1); const targetLaneWidth = targetWidth / 5;
-  ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 5; ctx.beginPath();
-  ctx.moveTo(center - targetWidth / 2, hitY); ctx.lineTo(center + targetWidth / 2, hitY); ctx.stroke();
+  const targetWidth = trackWidth; const targetLaneWidth = laneWidth;
+  ctx.save(); ctx.shadowBlur = 24; ctx.shadowColor = state.specialActive ? '#83f7ff' : '#dce8ff'; ctx.fillStyle = state.specialActive ? '#83f7ff' : '#dce8ff'; ctx.fillRect(left - 12, hitY - 3, trackWidth + 24, 6); ctx.restore();
   LANES.forEach((lane, index) => {
-    const x = center - targetWidth / 2 + targetLaneWidth * (index + .5); const held = state.held.has(index);
-    ctx.shadowBlur = held ? 34 : 12; ctx.shadowColor = lane.color; ctx.fillStyle = held ? lane.color : '#0d1420';
-    ctx.beginPath(); ctx.ellipse(x, hitY, targetLaneWidth * .34, 21, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = lane.color; ctx.lineWidth = held ? 8 : 6; ctx.stroke(); ctx.shadowBlur = 0;
-    ctx.fillStyle = '#fff'; ctx.font = '700 20px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(bindingLabel(state.bindings.lanes[index]), x, hitY + 1);
+    const x = left + laneWidth * (index + .5); const held = state.held.has(index);
+    ctx.save(); ctx.shadowBlur = held ? 38 : 20; ctx.shadowColor = lane.color; ctx.fillStyle = '#050811'; ctx.beginPath(); ctx.roundRect(x - 58, hitY - 27, 116, 54, 22); ctx.fill();
+    const targetGem = ctx.createLinearGradient(0, hitY - 24, 0, hitY + 24); targetGem.addColorStop(0, held ? '#fff' : `${lane.color}aa`); targetGem.addColorStop(.38, held ? lane.color : '#111724'); targetGem.addColorStop(1, '#03050a');
+    ctx.fillStyle = targetGem; ctx.beginPath(); ctx.roundRect(x - 51, hitY - 21, 102, 42, 18); ctx.fill(); ctx.strokeStyle = lane.color; ctx.lineWidth = held ? 7 : 5; ctx.stroke();
+    ctx.shadowBlur = 0; ctx.fillStyle = '#fff'; ctx.font = '800 19px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(bindingLabel(state.bindings.lanes[index]), x, hitY + 1); ctx.restore();
   });
 
   const effectNow = performance.now();
   state.hitEffects = state.hitEffects.filter(effect => effectNow - effect.started < 360);
   state.hitEffects.forEach(effect => {
-    const progress = (effectNow - effect.started) / 360; const x = center - targetWidth / 2 + targetLaneWidth * (effect.lane + .5);
+    const progress = (effectNow - effect.started) / 360; const x = left + targetLaneWidth * (effect.lane + .5);
     ctx.save(); ctx.globalAlpha = 1 - progress; ctx.strokeStyle = effect.color; ctx.lineWidth = 7 * (1 - progress) + 1;
     ctx.shadowBlur = 24; ctx.shadowColor = effect.color; ctx.beginPath(); ctx.ellipse(x, hitY, 42 + progress * 55, 17 + progress * 24, 0, 0, Math.PI * 2); ctx.stroke();
     ctx.fillStyle = effect.color; ctx.shadowBlur = 12;
     for (let particle = 0; particle < 7; particle++) { const angle = Math.PI * (1.08 + particle * .14); const distance = 18 + progress * 74; const px = x + Math.cos(angle) * distance; const py = hitY + Math.sin(angle) * distance; const size = 5 * (1 - progress) + 1; ctx.beginPath(); ctx.arc(px, py, size, 0, Math.PI * 2); ctx.fill(); }
     ctx.restore();
   });
+  if (state.specialActive) { ctx.save(); ctx.globalAlpha = .08; ctx.fillStyle = '#83f7ff'; for (let y = topY + ((now / 12) % 18); y < hitY; y += 18) ctx.fillRect(left, y, trackWidth, 1); ctx.restore(); }
 }
 
 function togglePause() {
