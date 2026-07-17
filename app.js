@@ -9,6 +9,8 @@ const DEFAULT_BINDINGS = { lanes: ['KeyA', 'KeyS', 'KeyJ', 'KeyK', 'KeyL'], stru
 const DIFFICULTIES = { a: 'Easy', b: 'Medium', c: 'Hard', d: 'Expert' };
 const NOTE_WINDOW = 1.35;
 const SONG_LEAD_IN = 3;
+const HIT_WINDOW = .25;
+const SUSTAIN_RELEASE_GRACE = .15;
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -245,7 +247,7 @@ function gameLoop() {
 function attemptHit(lane) {
   if (!state.running || state.paused) return;
   const time = songTime();
-  const candidates = state.notes.filter(note => note.state === 'pending' && note.lane === lane && Math.abs(note.time - time) <= .19).sort((a, b) => Math.abs(a.time - time) - Math.abs(b.time - time));
+  const candidates = state.notes.filter(note => note.state === 'pending' && note.lane === lane && Math.abs(note.time - time) <= HIT_WINDOW).sort((a, b) => Math.abs(a.time - time) - Math.abs(b.time - time));
   if (!candidates.length) { state.combo = 0; state.health = Math.max(0, state.health - 1.5); showJudge('MISS', '#ff405a'); return; }
   const anchor = candidates[0];
   const chord = state.notes.filter(note => note.state === 'pending' && Math.abs(note.time - anchor.time) < .012);
@@ -262,11 +264,21 @@ function attemptHit(lane) {
 }
 
 function markMisses(time) {
-  state.notes.forEach(note => { if (note.state === 'pending' && time - note.time > .2) { note.state = 'miss'; failSpecialPhrase(note); state.misses++; state.combo = 0; state.health = Math.max(0, state.health - 4); showJudge('MISS', '#ff405a'); } });
+  state.notes.forEach(note => { if (note.state === 'pending' && time - note.time > HIT_WINDOW) { note.state = 'miss'; failSpecialPhrase(note); state.misses++; state.combo = 0; state.health = Math.max(0, state.health - 4); showJudge('MISS', '#ff405a'); } });
 }
 
 function scoreSustains(time) {
-  state.notes.forEach(note => { if (note.state === 'holding') { if (!state.held.has(note.lane)) { note.state = 'released'; failSpecialPhrase(note); } else if (time >= note.time + note.duration) { note.state = 'hit'; note.hitAt = performance.now(); state.hitEffects.push({ lane: note.lane, started: note.hitAt, color: note.special ? '#83f7ff' : LANES[note.lane].color, specialPhrase: note.specialPhrase }); state.score += Math.round(note.duration * 500 * multiplier()); } } });
+  state.notes.forEach(note => {
+    if (note.state !== 'holding') return;
+    const endTime = note.time + note.duration;
+    if (time >= endTime) {
+      note.state = 'hit'; note.hitAt = performance.now();
+      state.hitEffects.push({ lane: note.lane, started: note.hitAt, color: note.special ? '#83f7ff' : LANES[note.lane].color, specialPhrase: note.specialPhrase });
+      state.score += Math.round(note.duration * 500 * multiplier());
+    } else if (!state.held.has(note.lane) && endTime - time > SUSTAIN_RELEASE_GRACE) {
+      note.state = 'released'; failSpecialPhrase(note);
+    }
+  });
 }
 
 function registerSpecialHit(note) {
