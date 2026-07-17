@@ -1,0 +1,19 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "cleanUrls": true,
+  "functions": { "api/*.mjs": { "maxDuration": 10 } },
+  "rewrites": [
+    { "source": "/api/song/:id", "destination": "/api/song?id=:id" },
+    { "source": "/api/chart/:id/:difficulty", "destination": "/api/chart?id=:id&difficulty=:difficulty" },
+    { "source": "/api/rooms/:code/:action", "destination": "/api/rooms?code=:code&action=:action" },
+    { "source": "/api/rooms/:code", "destination": "/api/rooms?code=:code" }
+  ],
+  "headers": [
+    { "source": "/(.*)", "headers": [
+      { "key": "X-Content-Type-Options", "value": "nosniff" },
+      { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+      { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" }
+    ] }
+  ]
+}
