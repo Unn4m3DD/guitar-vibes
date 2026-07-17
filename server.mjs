@@ -46,7 +46,7 @@ function decryptChart(payload) {
 
 function parseChart(xml) {
   const property = name => xml.match(new RegExp(`<${name}>([^<]*)</${name}>`, 'i'))?.[1] || '';
-  const notes = [...xml.matchAll(/<Note\s+time="([^"]+)"\s+duration="([^"]+)"\s+track="([^"]+)"\s+special="([^"]+)"\s*\/>/gi)].map(match => ({ time: Number(match[1]), duration: Number(match[2]), lane: Math.max(0, Math.min(4, Number(match[3]) - 1)), special: Number(match[4]) }));
+  const notes = [...xml.matchAll(/<Note\s+time="([^"]+)"\s+duration="([^"]+)"\s+track="([^"]+)"\s+special="([^"]+)"\s*\/>/gi)].map(match => ({ time: Number(match[1]), duration: Number(match[2]), lane: Math.max(0, Math.min(4, Number(match[3]))), special: Number(match[4]) }));
   return { title: property('Title'), artist: property('Artist'), length: Number(property('Length') || notes.at(-1)?.time || 0), level: property('Level'), notes };
 }
 
