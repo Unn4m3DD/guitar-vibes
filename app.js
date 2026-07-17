@@ -5,7 +5,7 @@ const LANES = [
   { key: 'k', label: 'K', color: '#39a8ff' },
   { key: 'l', label: 'L', color: '#ff8c32' },
 ];
-const DEFAULT_BINDINGS = { lanes: ['KeyA', 'KeyS', 'KeyJ', 'KeyK', 'KeyL'], strum: 'Space', special: 'Enter' };
+const DEFAULT_BINDINGS = { lanes: ['KeyA', 'KeyS', 'KeyJ', 'KeyK', 'KeyL'], strum: 'Enter', special: 'Space' };
 const DIFFICULTIES = { a: 'Easy', b: 'Medium', c: 'Hard', d: 'Expert' };
 const NOTE_WINDOW = 1.7;
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -15,7 +15,10 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 function loadBindings() {
   try {
     const saved = JSON.parse(localStorage.gfBindings || 'null');
-    if (Array.isArray(saved?.lanes) && saved.lanes.length === 5 && saved.lanes.every(Boolean) && saved.strum) return { ...saved, special: saved.special || DEFAULT_BINDINGS.special };
+    if (Array.isArray(saved?.lanes) && saved.lanes.length === 5 && saved.lanes.every(Boolean) && saved.strum) {
+      if (saved.strum === 'Space' && (!saved.special || saved.special === 'Enter')) return { ...saved, strum: 'Enter', special: 'Space' };
+      return { ...saved, special: saved.special || DEFAULT_BINDINGS.special };
+    }
   } catch {}
   return { lanes: [...DEFAULT_BINDINGS.lanes], strum: DEFAULT_BINDINGS.strum, special: DEFAULT_BINDINGS.special };
 }
