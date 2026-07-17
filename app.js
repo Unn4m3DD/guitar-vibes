@@ -7,7 +7,7 @@ const LANES = [
 ];
 const DEFAULT_BINDINGS = { lanes: ['KeyA', 'KeyS', 'KeyJ', 'KeyK', 'KeyL'], strum: 'Space', special: 'Enter' };
 const DIFFICULTIES = { a: 'Easy', b: 'Medium', c: 'Hard', d: 'Expert' };
-const NOTE_WINDOWS = { relaxed: 2.25, standard: 1.7, fast: 1.3 };
+const NOTE_WINDOW = 1.7;
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -31,9 +31,9 @@ const state = {
   route: 'library', songs: [], filtered: [], selected: null, metadata: null,
   difficulty: 'b', mode: 'tap', player: null, playerReady: false, chart: null,
   running: false, paused: false, notes: [], score: 0, combo: 0, maxCombo: 0,
-  hits: 0, misses: 0, health: 85, hitEffects: [], special: 0, specialActive: false, specialPhrases: new Map(),
+  hits: 0, misses: 0, health: 85, hitEffects: [], special: 0, specialActive: false, specialPhrases: new Map(), shakeUntil: 0,
   held: new Set(), animation: 0, lastTime: 0, room: null, roomPoll: null,
-  roomStartAt: null, noteSpeed: localStorage.gfNoteSpeed || 'standard',
+  roomStartAt: null,
   bindings: loadBindings(), bindingCapture: null, nickname: localStorage.gfNick || 'Player',
 };
 
@@ -131,13 +131,11 @@ function renderSongSetup() {
     <div class="setup-copy"><span class="eyebrow">READY TO PLAY</span><h1>${escapeHtml(song.title)}</h1><p>${escapeHtml(song.artist)} · ${Number(song.plays || 0).toLocaleString()} plays</p>
       <fieldset><legend>Difficulty</legend><div class="segmented">${Object.entries(DIFFICULTIES).map(([key, label]) => `<button class="${state.difficulty === key ? 'selected' : ''}" data-difficulty="${key}">${label}</button>`).join('')}</div></fieldset>
       <fieldset><legend>Game style</legend><div class="segmented"><button class="${state.mode === 'tap' ? 'selected' : ''}" data-mode="tap">Tap</button><button class="${state.mode === 'strum' ? 'selected' : ''}" data-mode="strum">Tap + Strum</button></div></fieldset>
-      <fieldset><legend>Note speed</legend><div class="segmented"><button class="${state.noteSpeed === 'relaxed' ? 'selected' : ''}" data-note-speed="relaxed">Relaxed</button><button class="${state.noteSpeed === 'standard' ? 'selected' : ''}" data-note-speed="standard">Standard</button><button class="${state.noteSpeed === 'fast' ? 'selected' : ''}" data-note-speed="fast">Fast</button></div></fieldset>
       <div class="setup-actions"><button class="primary large" data-start-song>Start song <span>▶</span></button></div>
     </div></div></section>`, 'Play');
   bindNavigation(); $('[data-back]').onclick = renderLibrary;
   $$('[data-difficulty]').forEach(button => button.onclick = () => { state.difficulty = button.dataset.difficulty; renderSongSetup(); });
   $$('[data-mode]').forEach(button => button.onclick = () => { state.mode = button.dataset.mode; renderSongSetup(); });
-  $$('[data-note-speed]').forEach(button => button.onclick = () => { state.noteSpeed = button.dataset.noteSpeed; localStorage.gfNoteSpeed = state.noteSpeed; renderSongSetup(); });
   $('[data-start-song]').onclick = loadGame;
 }
 
@@ -153,11 +151,18 @@ async function loadGame() {
 
 function prepareNotes(chartNotes) {
   let phraseId = -1; let lastSpecialTime = -Infinity;
-  return chartNotes.map((note, index) => {
+  const notes = chartNotes.map((note, index) => {
     if (note.special && note.time - lastSpecialTime > 2) phraseId++;
     if (note.special) lastSpecialTime = note.time;
     return { ...note, index, state: 'pending', specialPhrase: note.special ? phraseId : null };
   });
+  for (let lane = 0; lane < 5; lane++) {
+    const laneNotes = notes.filter(note => note.lane === lane); let cluster = [];
+    const finishCluster = () => { if (cluster.length > 1) cluster.at(-1).repeatCount = cluster.length; cluster = []; };
+    laneNotes.forEach(note => { const previous = cluster.at(-1); if (!previous || (note.duration <= .08 && previous.duration <= .08 && note.time - previous.time <= .3)) cluster.push(note); else { finishCluster(); cluster.push(note); } });
+    finishCluster();
+  }
+  return notes;
 }
 
 function prepareSpecialPhrases() {
@@ -170,8 +175,8 @@ function prepareSpecialPhrases() {
 
 function renderGame() {
   state.route = 'game'; resetScore();
-  $('#app').innerHTML = `<section class="game-shell"><div class="game-top"><button class="brand compact" data-exit><span class="brand-dot">▶</span><span>GUITAR <b>FLASH</b></span></button><div class="now-playing"><strong>${escapeHtml(state.selected.title)}</strong><span>${escapeHtml(state.selected.artist)} · ${DIFFICULTIES[state.difficulty]}</span></div><div class="hud"><label>COMBO<strong data-combo>0×</strong></label><label class="crowd">CROWD<span><i data-health></i></span></label><div class="special-hud" data-special-hud><small>SPECIAL · ${escapeHtml(bindingLabel(state.bindings.special))}</small><button data-use-special title="Activate special"><span><i data-special-fill></i></span><b data-special-value>0%</b></button></div><label>SCORE<strong data-score>0</strong></label><button data-pause>Ⅱ</button></div></div>
-    <div class="game-body"><div class="video-panel"><div id="youtube-player"></div><div class="sync-badge">Original Guitar Flash synchronization</div></div><div class="canvas-wrap"><canvas id="highway" width="1280" height="720"></canvas><div class="game-overlay" data-game-overlay><span class="eyebrow">${state.mode === 'tap' ? 'TAP MODE' : 'TAP + STRUM MODE'}</span><h1>${escapeHtml(state.selected.title)}</h1><p>${state.mode === 'tap' ? 'Press your five lane keys when notes cross the targets.' : `Hold your lane keys, then press ${escapeHtml(bindingLabel(state.bindings.strum))} to strum.`}</p><div class="key-help">${state.bindings.lanes.map(code => `<kbd>${escapeHtml(bindingLabel(code))}</kbd>`).join('')}${state.mode === 'strum' ? `<kbd class="space">${escapeHtml(bindingLabel(state.bindings.strum))}</kbd>` : ''}<kbd class="special-key">SPECIAL · ${escapeHtml(bindingLabel(state.bindings.special))}</kbd></div><button class="primary large" data-begin>Begin</button></div><div class="judgement" data-judgement></div></div></div>
+  $('#app').innerHTML = `<section class="game-shell"><div class="game-top"><button class="brand compact" data-exit><span class="brand-dot">▶</span><span>GUITAR <b>FLASH</b></span></button><div class="now-playing"><strong>${escapeHtml(state.selected.title)}</strong><span>${escapeHtml(state.selected.artist)} · ${DIFFICULTIES[state.difficulty]}</span></div><div class="hud"><label class="crowd">CROWD<span><i data-health></i></span></label><div class="special-hud" data-special-hud><small>SPECIAL · ${escapeHtml(bindingLabel(state.bindings.special))}</small><button data-use-special title="Activate special"><span><i data-special-fill></i></span><b data-special-value>0%</b></button></div><label>SCORE<strong data-score>0</strong></label><button data-pause>Ⅱ</button></div></div>
+    <div class="game-body"><div class="video-panel"><div id="youtube-player"></div><div class="sync-badge">Original Guitar Flash synchronization</div></div><div class="canvas-wrap"><canvas id="highway" width="1280" height="720"></canvas><div class="center-combo"><span>COMBO</span><strong data-combo>0×</strong></div><div class="game-overlay" data-game-overlay><span class="eyebrow">${state.mode === 'tap' ? 'TAP MODE' : 'TAP + STRUM MODE'}</span><h1>${escapeHtml(state.selected.title)}</h1><p>${state.mode === 'tap' ? 'Press your five lane keys when notes cross the targets.' : `Hold your lane keys, then press ${escapeHtml(bindingLabel(state.bindings.strum))} to strum.`}</p><div class="key-help">${state.bindings.lanes.map(code => `<kbd>${escapeHtml(bindingLabel(code))}</kbd>`).join('')}${state.mode === 'strum' ? `<kbd class="space">${escapeHtml(bindingLabel(state.bindings.strum))}</kbd>` : ''}<kbd class="special-key">SPECIAL · ${escapeHtml(bindingLabel(state.bindings.special))}</kbd></div><button class="primary large" data-begin>Begin</button></div><div class="judgement" data-judgement></div></div></div>
   </section>`;
   $('[data-exit]').onclick = () => { stopGame(); renderSongSetup(); };
   $('[data-pause]').onclick = togglePause;
@@ -231,9 +236,9 @@ function attemptHit(lane) {
   const points = grade === 'PERFECT' ? 1000 : grade === 'GREAT' ? 700 : 450;
   const hitAt = performance.now();
   let specialAwarded = false;
-  chord.forEach(note => { note.state = note.duration > .08 ? 'holding' : 'hit'; note.hitAt = hitAt; state.hitEffects.push({ lane: note.lane, started: hitAt, color: note.special ? '#83f7ff' : LANES[note.lane].color }); if (registerSpecialHit(note)) specialAwarded = true; });
+  chord.forEach(note => { note.state = note.duration > .08 ? 'holding' : 'hit'; note.hitAt = hitAt; state.hitEffects.push({ lane: note.lane, started: hitAt, color: note.special ? '#83f7ff' : LANES[note.lane].color, specialPhrase: note.specialPhrase }); if (registerSpecialHit(note)) specialAwarded = true; });
   state.combo += chord.length; state.maxCombo = Math.max(state.maxCombo, state.combo); state.hits += chord.length;
-  state.score += points * chord.length * multiplier(); state.health = Math.min(100, state.health + 1.5 * chord.length); showJudge(grade, grade === 'PERFECT' ? '#fff' : '#ffd83d');
+  state.score += points * chord.length * multiplier(); state.health = Math.min(100, state.health + 1.5 * chord.length);
   if (specialAwarded) { toast('Special phrase complete · +25%'); updateHud(); }
 }
 
@@ -242,7 +247,7 @@ function markMisses(time) {
 }
 
 function scoreSustains(time) {
-  state.notes.forEach(note => { if (note.state === 'holding') { if (!state.held.has(note.lane)) { note.state = 'released'; failSpecialPhrase(note); } else if (time >= note.time + note.duration) { note.state = 'hit'; note.hitAt = performance.now(); state.hitEffects.push({ lane: note.lane, started: note.hitAt, color: note.special ? '#83f7ff' : LANES[note.lane].color }); state.score += Math.round(note.duration * 500 * multiplier()); } } });
+  state.notes.forEach(note => { if (note.state === 'holding') { if (!state.held.has(note.lane)) { note.state = 'released'; failSpecialPhrase(note); } else if (time >= note.time + note.duration) { note.state = 'hit'; note.hitAt = performance.now(); state.hitEffects.push({ lane: note.lane, started: note.hitAt, color: note.special ? '#83f7ff' : LANES[note.lane].color, specialPhrase: note.specialPhrase }); state.score += Math.round(note.duration * 500 * multiplier()); } } });
 }
 
 function registerSpecialHit(note) {
@@ -250,10 +255,11 @@ function registerSpecialHit(note) {
   const phrase = state.specialPhrases.get(note.specialPhrase); if (!phrase || phrase.failed || phrase.awarded) return false;
   phrase.hits++;
   if (phrase.hits < phrase.total) return false;
-  phrase.awarded = true; state.special = Math.min(100, state.special + 25); return true;
+  phrase.awarded = true; state.special = Math.min(100, state.special + 25); state.shakeUntil = performance.now() + 280; return true;
 }
 
-function failSpecialPhrase(note) { if (note.special) { const phrase = state.specialPhrases.get(note.specialPhrase); if (phrase && !phrase.awarded) phrase.failed = true; } }
+function failSpecialPhrase(note) { if (note.special) { const phrase = state.specialPhrases.get(note.specialPhrase); if (phrase && !phrase.awarded && !phrase.failed) { phrase.failed = true; state.hitEffects = state.hitEffects.filter(effect => effect.specialPhrase !== note.specialPhrase); } } }
+function hasSpecialVisual(note) { return Boolean(note.special && !state.specialPhrases.get(note.specialPhrase)?.failed); }
 function activateSpecial() { if (!state.running || state.paused || state.specialActive) return; if (state.special < 50) { toast('Complete special phrases until the meter reaches 50%.'); return; } state.specialActive = true; showJudge('SPECIAL!', '#83f7ff'); updateHud(); }
 function updateSpecial(delta) { if (!state.specialActive) return; state.special = Math.max(0, state.special - delta * 12.5); if (state.special <= 0) { state.specialActive = false; showJudge('SPECIAL END', '#83f7ff'); } }
 function multiplier() { return Math.min(4, 1 + Math.floor(state.combo / 10)) * (state.specialActive ? 2 : 1); }
@@ -264,14 +270,16 @@ function drawFrame(time) {
   const w = canvas.width; const h = canvas.height; const center = w / 2; const now = performance.now();
   const topY = 28; const hitY = h - 108; const bottomY = h + 24; const trackWidth = 760;
   const left = center - trackWidth / 2; const laneWidth = trackWidth / 5;
-  const approach = NOTE_WINDOWS[state.noteSpeed] || NOTE_WINDOWS.standard;
+  const approach = NOTE_WINDOW;
   const project = (eventTime, lane = 2) => {
     const rawDepth = 1 - (eventTime - time) / approach;
     const depth = Math.max(0, Math.min(1, rawDepth));
-    return { rawDepth, depth, x: left + laneWidth * (lane + .5), y: topY + (hitY - topY) * Math.pow(depth, 1.02) };
+    return { rawDepth, depth, x: left + laneWidth * (lane + .5), y: topY + (hitY - topY) * Math.pow(Math.max(0, rawDepth), 1.02) };
   };
 
   ctx.clearRect(0, 0, w, h);
+  const shakeLeft = Math.max(0, state.shakeUntil - now); ctx.save();
+  if (shakeLeft) { const strength = 4 * shakeLeft / 280; ctx.translate(Math.sin(now * .17) * strength, Math.cos(now * .21) * strength * .7); }
   const stage = ctx.createRadialGradient(center, hitY, 20, center, h * .48, h * .9);
   stage.addColorStop(0, state.specialActive ? '#0b7188' : '#192a45'); stage.addColorStop(.45, state.specialActive ? '#092b38' : '#0a1220'); stage.addColorStop(1, '#020307');
   ctx.fillStyle = stage; ctx.fillRect(0, 0, w, h);
@@ -305,11 +313,12 @@ function drawFrame(time) {
   }
 
   state.notes.forEach(note => {
+    const specialVisual = hasSpecialVisual(note);
     if (note.state === 'hit') {
       const progress = Math.min(1, (performance.now() - (note.hitAt || 0)) / 230);
       if (progress < 1) {
         const impact = project(time, note.lane); const radius = 42 * (1 - progress * .7);
-        const hitColor = note.special ? '#83f7ff' : LANES[note.lane].color;
+        const hitColor = specialVisual ? '#83f7ff' : LANES[note.lane].color;
         ctx.save(); ctx.globalAlpha = 1 - progress; ctx.shadowBlur = 32; ctx.shadowColor = hitColor; ctx.strokeStyle = '#fff'; ctx.lineWidth = 5;
         ctx.beginPath(); ctx.ellipse(impact.x, impact.y, radius * 1.2, Math.max(2, radius * .42), 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
       }
@@ -318,21 +327,22 @@ function drawFrame(time) {
     if (['miss', 'released'].includes(note.state)) return;
     const head = project(note.time, note.lane);
     if (head.rawDepth < -.04 || head.rawDepth > 1.18) return;
-    const visibleHead = head.rawDepth > 1 ? project(time, note.lane) : head;
+    const visibleHead = head.rawDepth > 1 && note.state === 'holding' ? project(time, note.lane) : head;
     const noteWidth = 32 + 12 * Math.sqrt(visibleHead.depth); const noteHeight = 13 + 6 * Math.sqrt(visibleHead.depth); const color = LANES[note.lane].color;
     if (note.duration > .08) {
       const tail = project(note.time + note.duration, note.lane);
       ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = '#020409'; ctx.lineWidth = 22; ctx.beginPath(); ctx.moveTo(visibleHead.x, visibleHead.y); ctx.lineTo(tail.x, tail.y); ctx.stroke();
-      ctx.shadowBlur = 18; ctx.shadowColor = note.special ? '#83f7ff' : color; ctx.strokeStyle = note.special ? '#83f7ff' : color; ctx.globalAlpha = note.special ? .82 : .58; ctx.lineWidth = 12; ctx.stroke();
+      ctx.shadowBlur = 18; ctx.shadowColor = specialVisual ? '#83f7ff' : color; ctx.strokeStyle = specialVisual ? '#83f7ff' : color; ctx.globalAlpha = specialVisual ? .82 : .58; ctx.lineWidth = 12; ctx.stroke();
       ctx.strokeStyle = '#fff'; ctx.globalAlpha = .22; ctx.lineWidth = 3; ctx.stroke(); ctx.restore();
     }
-    ctx.save(); ctx.shadowBlur = note.special ? 34 : 24; ctx.shadowColor = note.special ? '#83f7ff' : color;
+    ctx.save(); ctx.shadowBlur = specialVisual ? 34 : 24; ctx.shadowColor = specialVisual ? '#83f7ff' : color;
     ctx.fillStyle = '#020308'; ctx.beginPath(); ctx.ellipse(visibleHead.x, visibleHead.y + 5, noteWidth + 7, noteHeight + 5, 0, 0, Math.PI * 2); ctx.fill();
-    const gem = ctx.createLinearGradient(0, visibleHead.y - noteHeight, 0, visibleHead.y + noteHeight); gem.addColorStop(0, '#fff'); gem.addColorStop(.18, note.special ? '#d8fdff' : color); gem.addColorStop(.62, color); gem.addColorStop(1, '#141722');
+    const gem = ctx.createLinearGradient(0, visibleHead.y - noteHeight, 0, visibleHead.y + noteHeight); gem.addColorStop(0, '#fff'); gem.addColorStop(.18, specialVisual ? '#d8fdff' : color); gem.addColorStop(.62, color); gem.addColorStop(1, '#141722');
     ctx.fillStyle = gem; ctx.beginPath(); ctx.ellipse(visibleHead.x, visibleHead.y, noteWidth, noteHeight, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.shadowBlur = 0; ctx.strokeStyle = note.special ? '#83f7ff' : color; ctx.lineWidth = note.special ? 6 : 4; ctx.stroke();
+    ctx.shadowBlur = 0; ctx.strokeStyle = specialVisual ? '#83f7ff' : color; ctx.lineWidth = specialVisual ? 6 : 4; ctx.stroke();
     ctx.globalAlpha = .7; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(visibleHead.x - noteWidth * .22, visibleHead.y - noteHeight * .38, noteWidth * .32, Math.max(2, noteHeight * .16), -.08, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
-    if (note.special) { ctx.fillStyle = '#071218'; ctx.font = `900 ${Math.max(12, noteHeight)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✦', visibleHead.x, visibleHead.y + 1); }
+    if (specialVisual) { ctx.fillStyle = '#071218'; ctx.font = `900 ${Math.max(12, noteHeight)}px system-ui`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✦', visibleHead.x, visibleHead.y + 1); }
+    if (note.repeatCount) { const badgeX = visibleHead.x + noteWidth + 12; const badgeY = visibleHead.y - noteHeight - 5; ctx.fillStyle = '#05070c'; ctx.beginPath(); ctx.arc(badgeX, badgeY, 14, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.font = '800 11px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(`${note.repeatCount}×`, badgeX, badgeY + .5); }
     ctx.restore();
   });
 
@@ -357,6 +367,7 @@ function drawFrame(time) {
     ctx.restore();
   });
   if (state.specialActive) { ctx.save(); ctx.globalAlpha = .08; ctx.fillStyle = '#83f7ff'; for (let y = topY + ((now / 12) % 18); y < hitY; y += 18) ctx.fillRect(left, y, trackWidth, 1); ctx.restore(); }
+  ctx.restore();
 }
 
 function togglePause() {
@@ -373,7 +384,7 @@ function finishGame() {
   $('[data-retry-song]').onclick = loadGame; $('[data-results-exit]').onclick = renderSongSetup;
 }
 
-function resetScore() { Object.assign(state, { running: false, paused: false, score: 0, combo: 0, maxCombo: 0, hits: 0, misses: 0, health: 85, hitEffects: [], special: 0, specialActive: false }); state.held.clear(); }
+function resetScore() { Object.assign(state, { running: false, paused: false, score: 0, combo: 0, maxCombo: 0, hits: 0, misses: 0, health: 85, hitEffects: [], special: 0, specialActive: false, shakeUntil: 0 }); state.held.clear(); }
 function stopGame() { state.running = false; cancelAnimationFrame(state.animation); try { state.player?.stopVideo?.(); state.player?.destroy?.(); } catch {} state.player = null; }
 function updateHud() { $('[data-score]') && ($('[data-score]').textContent = Math.round(state.score).toLocaleString()); $('[data-combo]') && ($('[data-combo]').textContent = `${state.combo}×`); $('[data-health]') && ($('[data-health]').style.width = `${state.health}%`); if ($('[data-special-fill]')) { $('[data-special-fill]').style.width = `${state.special}%`; $('[data-special-value]').textContent = `${Math.round(state.special)}%`; $('[data-special-hud]').classList.toggle('ready', state.special >= 50 && !state.specialActive); $('[data-special-hud]').classList.toggle('active', state.specialActive); } }
 function showJudge(text, color) { const node = $('[data-judgement]'); if (!node) return; node.getAnimations().forEach(animation => animation.cancel()); node.textContent = text; node.style.color = color; node.animate([{ opacity: 0, transform: 'translate(-50%,20px) scale(.65)' }, { opacity: 1, offset: .18, transform: 'translate(-50%,-4px) scale(1.14)' }, { opacity: 1, offset: .58, transform: 'translate(-50%,-12px) scale(1)' }, { opacity: 0, transform: 'translate(-50%,-58px) scale(.9)' }], { duration: 620, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }); }
