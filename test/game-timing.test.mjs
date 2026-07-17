@@ -18,11 +18,11 @@ test('accepts a note hit 230 ms from its target and does not miss it first', () 
   assert.equal(state.notes[0].state, 'hit');
 });
 
-test('grants sustain releases 100 ms of tail-end grace', () => {
+test('accepts a sustain after its initial press regardless of release time', () => {
   const state = { notes: [{ state: 'holding', lane: 0, time: 10, duration: 1, special: 0 }], held: new Set(), hitEffects: [], score: 0 };
-  const scoreSustains = new Function('state', 'failSpecialPhrase', 'multiplier', 'LANES', 'SUSTAIN_RELEASE_GRACE', `${extract('scoreSustains', 'registerSpecialHit')}; return scoreSustains;`)(state, () => {}, () => 1, lanes, constant('SUSTAIN_RELEASE_GRACE'));
+  const scoreSustains = new Function('state', 'multiplier', 'LANES', `${extract('scoreSustains', 'registerSpecialHit')}; return scoreSustains;`)(state, () => 1, lanes);
 
-  scoreSustains(10.9);
+  scoreSustains(10.1);
   assert.equal(state.notes[0].state, 'holding');
   scoreSustains(11);
   assert.equal(state.notes[0].state, 'hit');

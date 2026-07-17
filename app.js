@@ -10,7 +10,6 @@ const DIFFICULTIES = { a: 'Easy', b: 'Medium', c: 'Hard', d: 'Expert' };
 const NOTE_WINDOW = 1.35;
 const SONG_LEAD_IN = 3;
 const HIT_WINDOW = .25;
-const SUSTAIN_RELEASE_GRACE = .15;
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -275,8 +274,6 @@ function scoreSustains(time) {
       note.state = 'hit'; note.hitAt = performance.now();
       state.hitEffects.push({ lane: note.lane, started: note.hitAt, color: note.special ? '#83f7ff' : LANES[note.lane].color, specialPhrase: note.specialPhrase });
       state.score += Math.round(note.duration * 500 * multiplier());
-    } else if (!state.held.has(note.lane) && endTime - time > SUSTAIN_RELEASE_GRACE) {
-      note.state = 'released'; failSpecialPhrase(note);
     }
   });
 }
@@ -355,7 +352,7 @@ function drawFrame(time) {
       }
       return;
     }
-    if (['miss', 'released'].includes(note.state)) return;
+    if (note.state === 'miss') return;
     const head = project(note.time, note.lane);
     if (head.rawDepth < -.04 || head.rawDepth > 1.18) return;
     const visibleHead = head.rawDepth > 1 && note.state === 'holding' ? project(time, note.lane) : head;
